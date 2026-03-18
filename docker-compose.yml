@@ -33,7 +33,27 @@ services:
       - trader-logs:/app/logs
       - /var/run/docker.sock:/var/run/docker.sock  # to start/stop ib-gateway
 
+  orb-trader:
+    build: .
+    restart: unless-stopped
+    command: ["python", "-m", "orb_trader.main", "live"]
+    depends_on:
+      - ib-gateway
+    environment:
+      IBKR_HOST: ib-gateway
+      IBKR_PORT: ${IBKR_PORT:-4004}
+      ORB_CLIENT_ID: ${ORB_CLIENT_ID:-2}
+      ORB_ACCOUNT_SIZE: ${ORB_ACCOUNT_SIZE:-10000}
+      ORB_MAX_POSITIONS: ${ORB_MAX_POSITIONS:-3}
+      MASSIVE_API_KEY: ${MASSIVE_API_KEY:-}
+      TELEGRAM_TOKEN: ${TELEGRAM_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+    volumes:
+      - orb-data:/app/data
+      - trader-logs:/app/logs
+
 volumes:
   ib-gateway-settings:
   trader-data:
+  orb-data:
   trader-logs:
