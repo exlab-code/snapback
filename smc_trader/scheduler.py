@@ -15,6 +15,7 @@ import asyncio
 import json
 import logging
 import os
+import time
 from datetime import date, datetime, timedelta
 from typing import Dict, List, Optional
 
@@ -31,6 +32,58 @@ from smc_trader.signals import calculate_rsi, scan_universe
 
 logger = logging.getLogger(__name__)
 ET = pytz.timezone("US/Eastern")
+
+
+# ---------------------------------------------------------------------------
+# IB Gateway lifecycle (Docker socket)
+# ---------------------------------------------------------------------------
+
+def _gateway_container():
+    """Return the ib-gateway Docker container, or None if unavailable."""
+    try:
+        import docker
+        project = os.environ.get("COMPOSE_PROJECT_NAME", "snapback")
+        client = docker.from_env()
+        for c in client.containers.list(all=True):
+            if "ib-gateway" in c.name and project in c.name:
+                return c
+    except Exception as exc:
+        logger.warning("Docker unavailable — cannot manage gateway: %s", exc)
+    return None
+
+
+def _start_gateway(wait_seconds: int = 90) -> bool:
+    """Start the ib-gateway container and wait for it to be ready."""
+    c = _gateway_container()
+    if c is None:
+        return False
+    if c.status == "running":
+        logger.info("IB Gateway already running")
+        return True
+    logger.info("Starting IB Gateway ...")
+    c.start()
+    # Wait for socat port to open (gateway ready)
+    import socket
+    host = os.environ.get("IBKR_HOST", "ib-gateway")
+    port = int(os.environ.get("IBKR_PORT", 4004))
+    deadline = time.time() + wait_seconds
+    while time.time() < deadline:
+        try:
+            with socket.create_connection((host, port), timeout=2):
+                logger.info("IB Gateway is ready")
+                return True
+        except OSError:
+            time.sleep(3)
+    logger.error("IB Gateway did not become ready within %ds", wait_seconds)
+    return False
+
+
+def _stop_gateway() -> None:
+    """Stop the ib-gateway container."""
+    c = _gateway_container()
+    if c and c.status == "running":
+        c.stop(timeout=10)
+        logger.info("IB Gateway stopped — your IBKR session is free")
 _SIGNALS_FILE = os.path.join(os.getcwd(), "data", "pending_signals.json")
 
 
@@ -126,6 +179,7 @@ def job_premarket_orders(state: TradingState) -> None:
         return
 
     logger.info("=== Pre-market order submission ===")
+    _start_gateway()
     try:
         # Circuit breaker check
         equity = state._run_async(state.broker.get_account_equity())
@@ -207,6 +261,9 @@ def job_premarket_orders(state: TradingState) -> None:
 
     except Exception as exc:
         logger.exception("Pre-market orders failed: %s", exc)
+    finally:
+        state._run_async(state.broker.disconnect())
+        _stop_gateway()
 
 
 def job_eod_exit_check(state: TradingState) -> None:
@@ -216,6 +273,7 @@ def job_eod_exit_check(state: TradingState) -> None:
         return
 
     logger.info("=== EOD exit check ===")
+    _start_gateway()
     try:
         positions = state._run_async(state.broker.get_positions())
         if not positions:
@@ -278,6 +336,9 @@ def job_eod_exit_check(state: TradingState) -> None:
 
     except Exception as exc:
         logger.exception("EOD exit check failed: %s", exc)
+    finally:
+        state._run_async(state.broker.disconnect())
+        _stop_gateway()
 
 
 # ---------------------------------------------------------------------------

@@ -2,7 +2,7 @@ services:
 
   ib-gateway:
     image: ghcr.io/gnzsnz/ib-gateway:stable
-    restart: unless-stopped
+    restart: "no"                          # smc-trader controls start/stop
     environment:
       TWS_USERID: ${IBKR_USERNAME}
       TWS_PASSWORD: ${IBKR_PASSWORD}
@@ -11,16 +11,14 @@ services:
       EXISTING_SESSION_DETECTED_ACTION: primary
       READ_ONLY_API: no
     ports:
-      - "4004:4004"   # socat relay → paper API (bypasses TrustedIPs)
-      - "4003:4003"   # socat relay → live API
+      - "4004:4004"
+      - "4003:4003"
     volumes:
       - ib-gateway-settings:/home/ibgateway
 
   smc-trader:
     build: .
     restart: unless-stopped
-    depends_on:
-      - ib-gateway
     environment:
       IBKR_HOST: ib-gateway
       IBKR_PORT: ${IBKR_PORT:-4004}
@@ -30,9 +28,11 @@ services:
       TELEGRAM_TOKEN: ${TELEGRAM_TOKEN:-}
       TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
       USE_FULL_SP500: ${USE_FULL_SP500:-false}
+      COMPOSE_PROJECT_NAME: ${COMPOSE_PROJECT_NAME:-snapback}
     volumes:
       - trader-data:/app/data
       - trader-logs:/app/logs
+      - /var/run/docker.sock:/var/run/docker.sock  # to start/stop ib-gateway
 
 volumes:
   ib-gateway-settings:

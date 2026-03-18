@@ -8,3 +8,4 @@ pytz
 requests
 pyarrow
 lxml
+docker>=7.0.0
