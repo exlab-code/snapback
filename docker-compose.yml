@@ -10,8 +10,8 @@ services:
       JAVA_HEAP_SIZE: 512
       EXISTING_SESSION_DETECTED_ACTION: primary
     ports:
-      - "4002:4002"
-      - "4001:4001"
+      - "4004:4004"   # socat relay → paper API (bypasses TrustedIPs)
+      - "4003:4003"   # socat relay → live API
     volumes:
       - ib-gateway-settings:/home/ibgateway
 
@@ -22,7 +22,7 @@ services:
       - ib-gateway
     environment:
       IBKR_HOST: ib-gateway
-      IBKR_PORT: ${IBKR_PORT:-4002}
+      IBKR_PORT: ${IBKR_PORT:-4004}
       IBKR_CLIENT_ID: ${IBKR_CLIENT_ID:-1}
       ACCOUNT_SIZE: ${ACCOUNT_SIZE:-10000}
       MASSIVE_API_KEY: ${MASSIVE_API_KEY:-}
