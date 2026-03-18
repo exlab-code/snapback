@@ -12,7 +12,9 @@ Jobs are paused during the IBKR daily-reset window (11:45–12:45 ET).
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+import os
 from datetime import date, datetime, timedelta
 from typing import Dict, List, Optional
 
@@ -29,6 +31,24 @@ from smc_trader.signals import calculate_rsi, scan_universe
 
 logger = logging.getLogger(__name__)
 ET = pytz.timezone("US/Eastern")
+_SIGNALS_FILE = os.path.join(os.getcwd(), "data", "pending_signals.json")
+
+
+def _save_signals(signals: list) -> None:
+    os.makedirs(os.path.dirname(_SIGNALS_FILE), exist_ok=True)
+    with open(_SIGNALS_FILE, "w") as f:
+        json.dump({"date": date.today().isoformat(), "signals": signals}, f, default=str)
+
+
+def _load_signals() -> list:
+    try:
+        with open(_SIGNALS_FILE) as f:
+            data = json.load(f)
+        if data.get("date") == date.today().isoformat():
+            return data.get("signals", [])
+    except Exception:
+        pass
+    return []
 
 
 def _is_trading_day(dt: date | None = None) -> bool:
@@ -50,7 +70,7 @@ class TradingState:
         self.broker = broker
         self.circuit_breaker = CircuitBreaker(config.initial_capital)
         self.settlement = SettlementTracker(settled_cash=config.initial_capital)
-        self.pending_signals: List[dict] = []
+        self.pending_signals: List[dict] = _load_signals()
         self.position_meta: Dict[str, dict] = {}  # ticker -> {entry_price, entry_date, shares}
 
     def _run_async(self, coro):
@@ -81,6 +101,7 @@ def job_eod_scan(state: TradingState) -> None:
         ]
 
         state.pending_signals = today_signals.to_dict("records")
+        _save_signals(state.pending_signals)
         logger.info(
             "EOD scan complete: %d signals generated", len(state.pending_signals)
         )
@@ -127,9 +148,11 @@ def job_premarket_orders(state: TradingState) -> None:
             state.pending_signals = []
             return
 
-        # Count current positions
+        # Count current positions + tickers with pending open orders (unfilled GTC entries)
         positions = state._run_async(state.broker.get_positions())
-        open_count = len(positions)
+        open_orders = state._run_async(state.broker.get_open_orders())
+        pending_tickers = {t.contract.symbol for t in open_orders if t.order.action == "BUY"}
+        open_count = len(positions) + len(pending_tickers - set(positions))
 
         for sig in state.pending_signals:
             if open_count >= state.config.max_positions:
@@ -139,6 +162,9 @@ def job_premarket_orders(state: TradingState) -> None:
             ticker = sig["ticker"]
             if ticker in positions:
                 logger.debug("Already holding %s — skip", ticker)
+                continue
+            if ticker in pending_tickers:
+                logger.debug("Open buy order already exists for %s — skip", ticker)
                 continue
 
             entry_price = sig["close"]
