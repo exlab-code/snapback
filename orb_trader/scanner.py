@@ -34,7 +34,7 @@ async def scan_gappers(ib: IB, config: ORBConfig) -> list[dict]:
     ]
 
     try:
-        scan_data = await ib.reqScannerDataAsync(sub, filterOptions=filter_options)
+        scan_data = await ib.reqScannerDataAsync(sub, filter_options)
     except Exception as exc:
         logger.error("Scanner request failed: %s", exc)
         return []

@@ -43,7 +43,7 @@ class ORBConfig:
 
     # Price filters
     min_price: float = 5.0
-    max_price: float = 200.0
+    max_price: float = 2000.0
 
     # ATR filters
     min_atr_pct: float = 2.0
