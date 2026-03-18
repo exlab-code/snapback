@@ -7,3 +7,4 @@ exchange_calendars>=4.0.0
 pytz
 requests
 pyarrow
+lxml

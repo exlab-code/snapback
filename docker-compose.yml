@@ -15,10 +15,10 @@ services:
     volumes:
       - ib-gateway-settings:/root/Jts
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:8888/ || exit 1"]
+      test: ["CMD-SHELL", "nc -z localhost 4002 || exit 1"]
       interval: 30s
       timeout: 10s
-      retries: 10
+      retries: 20
       start_period: 120s
 
   smc-trader:
