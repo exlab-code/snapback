@@ -28,7 +28,6 @@ services:
       TELEGRAM_TOKEN: ${TELEGRAM_TOKEN:-}
       TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
       USE_FULL_SP500: ${USE_FULL_SP500:-false}
-      COMPOSE_PROJECT_NAME: ${COMPOSE_PROJECT_NAME:-snapback}
     volumes:
       - trader-data:/app/data
       - trader-logs:/app/logs

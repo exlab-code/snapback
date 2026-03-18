@@ -42,10 +42,10 @@ def _gateway_container():
     """Return the ib-gateway Docker container, or None if unavailable."""
     try:
         import docker
-        project = os.environ.get("COMPOSE_PROJECT_NAME", "snapback")
+        resource_uuid = os.environ.get("COOLIFY_RESOURCE_UUID", "")
         client = docker.from_env()
         for c in client.containers.list(all=True):
-            if "ib-gateway" in c.name and project in c.name:
+            if "ib-gateway" in c.name and (not resource_uuid or resource_uuid in c.name):
                 return c
     except Exception as exc:
         logger.warning("Docker unavailable — cannot manage gateway: %s", exc)
