@@ -1,0 +1,45 @@
+services:
+
+  ib-gateway:
+    image: ghcr.io/gnzsnz/ib-gateway:stable
+    restart: unless-stopped
+    environment:
+      TWS_USERID: ${IBKR_USERNAME}
+      TWS_PASSWORD: ${IBKR_PASSWORD}
+      TRADING_MODE: ${TRADING_MODE:-paper}
+      TWS_SETTINGS_PATH: /root/Jts
+      JAVA_HEAP_SIZE: 512
+    ports:
+      - "4002:4002"
+      - "4001:4001"
+    volumes:
+      - ib-gateway-settings:/root/Jts
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8888/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 120s
+
+  smc-trader:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      ib-gateway:
+        condition: service_healthy
+    environment:
+      IBKR_HOST: ib-gateway
+      IBKR_PORT: ${IBKR_PORT:-4002}
+      IBKR_CLIENT_ID: ${IBKR_CLIENT_ID:-1}
+      ACCOUNT_SIZE: ${ACCOUNT_SIZE:-10000}
+      TELEGRAM_TOKEN: ${TELEGRAM_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+      USE_FULL_SP500: ${USE_FULL_SP500:-false}
+    volumes:
+      - trader-data:/app/data
+      - trader-logs:/app/logs
+
+volumes:
+  ib-gateway-settings:
+  trader-data:
+  trader-logs:

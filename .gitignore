@@ -1,0 +1,10 @@
+.env
+__pycache__/
+*.pyc
+*.pyo
+.DS_Store
+data/cache/
+logs/
+zipline_backtest/csv_bundle/
+zipline_backtest/tearsheet.png
+*.parquet

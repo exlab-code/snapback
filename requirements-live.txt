@@ -1,0 +1,9 @@
+ib_async>=2.0.0
+yfinance>=0.2.0
+pandas>=2.0.0
+numpy>=1.24.0
+APScheduler>=3.10.0
+exchange_calendars>=4.0.0
+pytz
+requests
+pyarrow
