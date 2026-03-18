@@ -8,6 +8,7 @@ services:
       TWS_PASSWORD: ${IBKR_PASSWORD}
       TRADING_MODE: ${TRADING_MODE:-paper}
       JAVA_HEAP_SIZE: 512
+      EXISTING_SESSION_DETECTED_ACTION: primary
     ports:
       - "4002:4002"
       - "4001:4001"
