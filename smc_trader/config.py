@@ -103,6 +103,9 @@ class Config:
     ibkr_port: int = 4002
     ibkr_client_id: int = 1
 
+    # Massive.com API key (empty = use yfinance fallback)
+    massive_api_key: str = ""
+
     # Telegram alerts (empty = disabled)
     telegram_token: str = ""
     telegram_chat_id: str = ""
@@ -118,6 +121,8 @@ class Config:
             self.ibkr_client_id = int(os.environ["IBKR_CLIENT_ID"])
         if os.environ.get("ACCOUNT_SIZE"):
             self.account_size = float(os.environ["ACCOUNT_SIZE"])
+        if os.environ.get("MASSIVE_API_KEY"):
+            self.massive_api_key = os.environ["MASSIVE_API_KEY"]
         if os.environ.get("TELEGRAM_TOKEN"):
             self.telegram_token = os.environ["TELEGRAM_TOKEN"]
         if os.environ.get("TELEGRAM_CHAT_ID"):

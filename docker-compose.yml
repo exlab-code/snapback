@@ -7,13 +7,12 @@ services:
       TWS_USERID: ${IBKR_USERNAME}
       TWS_PASSWORD: ${IBKR_PASSWORD}
       TRADING_MODE: ${TRADING_MODE:-paper}
-      TWS_SETTINGS_PATH: /root/Jts
       JAVA_HEAP_SIZE: 512
     ports:
       - "4002:4002"
       - "4001:4001"
     volumes:
-      - ib-gateway-settings:/root/Jts
+      - ib-gateway-settings:/home/ibgateway
 
   smc-trader:
     build: .
@@ -25,6 +24,7 @@ services:
       IBKR_PORT: ${IBKR_PORT:-4002}
       IBKR_CLIENT_ID: ${IBKR_CLIENT_ID:-1}
       ACCOUNT_SIZE: ${ACCOUNT_SIZE:-10000}
+      MASSIVE_API_KEY: ${MASSIVE_API_KEY:-}
       TELEGRAM_TOKEN: ${TELEGRAM_TOKEN:-}
       TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
       USE_FULL_SP500: ${USE_FULL_SP500:-false}
