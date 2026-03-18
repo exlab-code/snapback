@@ -14,19 +14,12 @@ services:
       - "4001:4001"
     volumes:
       - ib-gateway-settings:/root/Jts
-    healthcheck:
-      test: ["CMD-SHELL", "nc -z localhost 4002 || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 20
-      start_period: 120s
 
   smc-trader:
     build: .
     restart: unless-stopped
     depends_on:
-      ib-gateway:
-        condition: service_healthy
+      - ib-gateway
     environment:
       IBKR_HOST: ib-gateway
       IBKR_PORT: ${IBKR_PORT:-4002}
