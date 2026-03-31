@@ -133,7 +133,9 @@ def fetch_ticker(
         except Exception:
             logger.warning("Corrupt cache for %s, re-fetching", ticker)
 
-    df = _fetch_massive(ticker, start, interval) or _fetch_yfinance(ticker, start, interval)
+    df = _fetch_massive(ticker, start, interval)
+    if df is None or df.empty:
+        df = _fetch_yfinance(ticker, start, interval)
 
     if df is None or df.empty:
         logger.warning("No data for %s/%s", ticker, interval)

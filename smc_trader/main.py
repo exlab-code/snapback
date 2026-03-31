@@ -39,18 +39,12 @@ def cmd_live() -> None:
     """Connect to IBKR paper and start the scheduler loop."""
     import logging
 
-    from smc_trader.broker import IBKRBroker
     from smc_trader.scheduler import TradingState, build_scheduler
 
     logger = logging.getLogger(__name__)
     cfg = Config()
-    broker = IBKRBroker(cfg)
 
-    # Connect
-    logger.info("Live mode — connecting to IBKR at %s:%d ...", cfg.ibkr_host, cfg.ibkr_port)
-    asyncio.get_event_loop().run_until_complete(broker.connect())
-
-    state = TradingState(cfg, broker)
+    state = TradingState(cfg)
     scheduler = build_scheduler(state)
     scheduler.start()
 
@@ -77,7 +71,6 @@ def cmd_live() -> None:
     finally:
         logger.info("Shutting down ...")
         scheduler.shutdown(wait=False)
-        asyncio.get_event_loop().run_until_complete(broker.disconnect())
         logger.info("Shutdown complete")
 
 
@@ -91,11 +84,14 @@ def cmd_kill() -> None:
     cfg = Config()
     broker = IBKRBroker(cfg)
 
+    async def _kill():
+        await broker.connect()
+        logger.warning("KILL SWITCH — cancelling all orders and flattening positions")
+        await broker.cancel_all_orders()
+        await broker.disconnect()
+
     logger.info("Kill mode — connecting to IBKR ...")
-    asyncio.get_event_loop().run_until_complete(broker.connect())
-    logger.warning("KILL SWITCH — cancelling all orders and flattening positions")
-    asyncio.get_event_loop().run_until_complete(broker.cancel_all_orders())
-    asyncio.get_event_loop().run_until_complete(broker.disconnect())
+    asyncio.run(_kill())
     logger.info("Kill complete")
 
 

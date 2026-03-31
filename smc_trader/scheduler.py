@@ -118,21 +118,28 @@ def _is_trading_day(dt: date | None = None) -> bool:
 class TradingState:
     """Mutable state shared across scheduled jobs."""
 
-    def __init__(self, config: Config, broker: IBKRBroker) -> None:
+    def __init__(self, config: Config, broker: IBKRBroker | None = None) -> None:
         self.config = config
-        self.broker = broker
         self.circuit_breaker = CircuitBreaker(config.initial_capital)
         self.settlement = SettlementTracker(settled_cash=config.initial_capital)
         self.pending_signals: List[dict] = _load_signals()
         self.position_meta: Dict[str, dict] = {}  # ticker -> {entry_price, entry_date, shares}
 
-    def _run_async(self, coro):
-        """Helper to run an async coroutine from sync scheduler callbacks."""
-        loop = self.broker.ib.loop if hasattr(self.broker.ib, 'loop') else None
-        if loop and loop.is_running():
-            future = asyncio.run_coroutine_threadsafe(coro, loop)
-            return future.result(timeout=60)
-        return asyncio.get_event_loop().run_until_complete(coro)
+    def run_async_job(self, async_fn):
+        """Run an entire async job function on a fresh event loop.
+
+        *async_fn* receives ``(state, broker)`` and should perform all
+        broker I/O in a single ``await`` chain so the ib_async connection
+        stays on one loop.
+        """
+        loop = asyncio.new_event_loop()
+        try:
+            asyncio.set_event_loop(loop)
+            broker = IBKRBroker(self.config)
+            return loop.run_until_complete(async_fn(self, broker))
+        finally:
+            loop.close()
+            asyncio.set_event_loop(None)
 
 
 # ---------------------------------------------------------------------------
@@ -181,15 +188,27 @@ def job_premarket_orders(state: TradingState) -> None:
     logger.info("=== Pre-market order submission ===")
     _start_gateway()
     try:
+        state.run_async_job(_async_premarket_orders)
+    except Exception as exc:
+        logger.exception("Pre-market orders failed: %s", exc)
+    finally:
+        _stop_gateway()
+
+
+async def _async_premarket_orders(state: TradingState, broker: IBKRBroker) -> None:
+    """Async implementation of pre-market order submission."""
+    try:
+        await broker.connect()
+
         # Circuit breaker check
-        equity = state._run_async(state.broker.get_account_equity())
+        equity = await broker.get_account_equity()
         sizing_equity = state.config.account_size if state.config.account_size > 0 else equity
         cb_state = state.circuit_breaker.check(equity)
         logger.info("Circuit breaker: %s (equity=$%.2f)", cb_state, equity)
 
         if cb_state == "KILL":
             logger.critical("KILL switch — cancelling everything")
-            state._run_async(state.broker.cancel_all_orders())
+            await broker.cancel_all_orders()
             alert(
                 "KILL SWITCH ACTIVATED — all orders cancelled, positions flattened",
                 token=state.config.telegram_token,
@@ -203,8 +222,8 @@ def job_premarket_orders(state: TradingState) -> None:
             return
 
         # Count current positions + tickers with pending open orders (unfilled GTC entries)
-        positions = state._run_async(state.broker.get_positions())
-        open_orders = state._run_async(state.broker.get_open_orders())
+        positions = await broker.get_positions()
+        open_orders = await broker.get_open_orders()
         pending_tickers = {t.contract.symbol for t in open_orders if t.order.action == "BUY"}
         open_count = len(positions) + len(pending_tickers - set(positions))
 
@@ -239,9 +258,7 @@ def job_premarket_orders(state: TradingState) -> None:
                 logger.info("Insufficient settled cash for %s ($%.2f needed)", ticker, cost)
                 continue
 
-            state._run_async(
-                state.broker.place_bracket_order(ticker, shares, entry_price, stop_price)
-            )
+            await broker.place_bracket_order(ticker, shares, entry_price, stop_price)
             state.position_meta[ticker] = {
                 "entry_price": entry_price,
                 "entry_date": date.today(),
@@ -258,12 +275,8 @@ def job_premarket_orders(state: TradingState) -> None:
 
         state.pending_signals = []
         logger.info("Pre-market order submission complete")
-
-    except Exception as exc:
-        logger.exception("Pre-market orders failed: %s", exc)
     finally:
-        state._run_async(state.broker.disconnect())
-        _stop_gateway()
+        await broker.disconnect()
 
 
 def job_eod_exit_check(state: TradingState) -> None:
@@ -275,7 +288,19 @@ def job_eod_exit_check(state: TradingState) -> None:
     logger.info("=== EOD exit check ===")
     _start_gateway()
     try:
-        positions = state._run_async(state.broker.get_positions())
+        state.run_async_job(_async_eod_exit_check)
+    except Exception as exc:
+        logger.exception("EOD exit check failed: %s", exc)
+    finally:
+        _stop_gateway()
+
+
+async def _async_eod_exit_check(state: TradingState, broker: IBKRBroker) -> None:
+    """Async implementation of EOD exit check."""
+    try:
+        await broker.connect()
+
+        positions = await broker.get_positions()
         if not positions:
             logger.info("No open positions")
             return
@@ -306,7 +331,7 @@ def job_eod_exit_check(state: TradingState) -> None:
                 exit_reason = f"Time stop ({days_held} days)"
 
             if exit_reason:
-                state._run_async(state.broker.place_market_sell(ticker, shares))
+                await broker.place_market_sell(ticker, shares)
                 entry_price = meta.get("entry_price", 0)
                 current_price = df["Close"].iloc[-1]
                 state.settlement.record_sale(shares * current_price)
@@ -325,7 +350,7 @@ def job_eod_exit_check(state: TradingState) -> None:
                 )
 
         # Daily P&L summary
-        equity = state._run_async(state.broker.get_account_equity())
+        equity = await broker.get_account_equity()
         daily_pnl = equity - state.circuit_breaker.day_start
         alert(
             f"Daily P&L: ${daily_pnl:+,.2f}  Equity: ${equity:,.2f}",
@@ -333,12 +358,8 @@ def job_eod_exit_check(state: TradingState) -> None:
             chat_id=state.config.telegram_chat_id,
         )
         state.circuit_breaker.reset_day(equity)
-
-    except Exception as exc:
-        logger.exception("EOD exit check failed: %s", exc)
     finally:
-        state._run_async(state.broker.disconnect())
-        _stop_gateway()
+        await broker.disconnect()
 
 
 # ---------------------------------------------------------------------------
